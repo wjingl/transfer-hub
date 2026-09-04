@@ -1,5 +1,6 @@
 # Transfer Hub portable static server.
-# Uses Windows built-in .NET HttpListener — no Python/Node/third-party install required.
+# English-only on purpose: avoids PowerShell 5.1 code-page parsing issues.
+# Uses Windows built-in .NET HttpListener - no Python/Node install needed.
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
 
@@ -32,11 +33,10 @@ $mime = @{
 }
 
 Write-Host ""
-Write-Host "  Transfer Hub 便携版已启动" -ForegroundColor Green
-Write-Host "  本机访问地址: http://127.0.0.1:$port/" -ForegroundColor Cyan
-Write-Host "  内网分享: 让其它设备访问本机局域网 IP 的端口 $port"
-Write-Host "            (摄像头接收需要 HTTPS，普通 HTTP 仅供发送与 GIF 接收)"
-Write-Host "  关闭此窗口即停止服务。" -ForegroundColor Yellow
+Write-Host "  Transfer Hub portable server started"
+Write-Host "  Local URL: http://127.0.0.1:$port/"
+Write-Host "  LAN sharing: other devices need HTTPS for the camera."
+Write-Host "  Close this window to stop the server."
 Write-Host ""
 try { Start-Process "http://127.0.0.1:$port/" } catch {}
 
