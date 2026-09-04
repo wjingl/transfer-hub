@@ -8,6 +8,7 @@ import decodeWorkerUrl from '@/workers/decode.worker.ts?worker&url';
 import encodeWorkerUrl from '@/workers/encode.worker.ts?worker&url';
 import gifWorkerUrl from '@/workers/gif.worker.ts?worker&url';
 import qrRenderWorkerUrl from '@/workers/qr_render.worker.ts?worker&url';
+import { CIMBAR_FILES } from '@/app/backends/cimbar/runtime';
 
 export const APP_CACHE_NAME = 'raptorqr-v1';
 
@@ -34,16 +35,14 @@ const WORKER_ASSETS: RuntimeAsset[] = [
   { label: 'decode worker', url: decodeWorkerUrl },
   { label: 'QR render worker', url: qrRenderWorkerUrl },
   { label: 'GIF worker', url: gifWorkerUrl },
-  { label: 'Cimbar sender worker', url: './cimbar/send-worker.js' },
-  { label: 'Cimbar receiver worker', url: './cimbar/cimbar-recv-worker.js' },
+  { label: 'Cimbar sender worker', url: `./cimbar/${CIMBAR_FILES.sendWorker}` },
+  { label: 'Cimbar receiver worker', url: `./cimbar/${CIMBAR_FILES.recvWorker}` },
 ];
 
 const CIMBAR_ASSETS: RuntimeAsset[] = [
-  { label: 'Cimbar runtime', url: './cimbar/cimbar_js.js' },
-  { label: 'Cimbar WASM', url: './cimbar/cimbar_js.wasm' },
-  { label: 'Cimbar sender', url: './cimbar/send.js' },
-  { label: 'Cimbar receiver', url: './cimbar/recv.js' },
-  { label: 'Cimbar zstd', url: './cimbar/zstd.js' },
+  { label: 'Cimbar runtime', url: `./cimbar/${CIMBAR_FILES.glue}` },
+  { label: 'Cimbar WASM', url: `./cimbar/${CIMBAR_FILES.wasm}` },
+  { label: 'Cimbar sender module', url: `./cimbar/${CIMBAR_FILES.send}` },
 ];
 
 export async function registerServiceWorker(): Promise<void> {
