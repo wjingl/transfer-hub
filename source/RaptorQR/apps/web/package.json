@@ -1,0 +1,24 @@
+{
+  "name": "@raptorqr/web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "RaptorQR Preact web app",
+  "type": "module",
+  "dependencies": {
+    "@raptorqr/core": "workspace:*",
+    "@raptorqr/fast-qr-wasm": "workspace:*",
+    "@raptorqr/raptorq-wasm": "workspace:*",
+    "fflate": "^0.8.2",
+    "preact": "10.29.4"
+  },
+  "devDependencies": {
+    "@preact/preset-vite": "2"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -p tsconfig.json --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  }
+}

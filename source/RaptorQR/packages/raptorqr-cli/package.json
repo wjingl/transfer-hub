@@ -1,0 +1,29 @@
+{
+  "name": "@raptorqr/cli",
+  "version": "0.1.1",
+  "description": "RaptorQR command line interface",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "raptorqr": "dist/raptorqr.js"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist/",
+    "README.md",
+    "LICENSE"
+  ],
+  "dependencies": {
+    "@raptorqr/core": "workspace:*",
+    "@raptorqr/fast-qr-wasm": "workspace:*",
+    "@raptorqr/raptorq-wasm": "workspace:*"
+  },
+  "scripts": {
+    "build": "esbuild src/raptorqr.ts --bundle --platform=node --target=node18 --outfile=dist/raptorqr.js --format=esm --external:node:* && node scripts/copy-wasm-assets.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "cli": "pnpm run build && node dist/raptorqr.js"
+  }
+}

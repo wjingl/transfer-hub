@@ -1,0 +1,15 @@
+{
+  "name": "raptorqr_raptorq_wasm",
+  "type": "module",
+  "version": "0.1.0",
+  "files": [
+    "raptorqr_raptorq_wasm_bg.wasm",
+    "raptorqr_raptorq_wasm.js",
+    "raptorqr_raptorq_wasm.d.ts"
+  ],
+  "main": "raptorqr_raptorq_wasm.js",
+  "types": "raptorqr_raptorq_wasm.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}

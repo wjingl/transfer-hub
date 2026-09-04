@@ -1,0 +1,47 @@
+{
+  "name": "raptorqr",
+  "version": "0.1.0",
+  "private": true,
+  "description": "High-throughput QR transfer toolkit and web app",
+  "type": "module",
+  "packageManager": "pnpm@10.15.1",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "dev:web": "pnpm --filter @raptorqr/web dev",
+    "sync:cimbar": "node scripts/sync-cimbar-runtime.mjs",
+    "build": "pnpm sync:cimbar && pnpm --filter @raptorqr/fast-qr-wasm build && pnpm --filter @raptorqr/raptorq-wasm build && pnpm --filter @raptorqr/core build && pnpm --filter @raptorqr/cli build && pnpm --filter @raptorqr/web build",
+    "test": "pnpm --filter @raptorqr/fast-qr-wasm test && pnpm --filter @raptorqr/raptorq-wasm test && pnpm --filter @raptorqr/core test && pnpm --filter @raptorqr/cli test && pnpm --filter @raptorqr/web test",
+    "test:smoke": "vitest run smoke.test.ts --environment node",
+    "benchmark": "vitest run benchmark.test.ts --environment happy-dom",
+    "benchmark:final": "vitest run benchmark.final.test.ts --environment happy-dom",
+    "benchmark:soak": "vitest run benchmark.soak.test.ts --environment happy-dom",
+    "test:watch": "pnpm --filter @raptorqr/web test:watch",
+    "verify:raptorq-wasm": "pnpm --filter @raptorqr/raptorq-wasm verify:raptorq"
+  },
+  "keywords": [
+    "qr",
+    "qr-code",
+    "terminal",
+    "cli",
+    "file-transfer",
+    "animated",
+    "gif",
+    "raptorq",
+    "fountain-code"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@preact/preset-vite": "2",
+    "@raptorqr/core": "workspace:*",
+    "@raptorqr/fast-qr-wasm": "workspace:*",
+    "@raptorqr/raptorq-wasm": "workspace:*",
+    "@types/node": "26.1.0",
+    "esbuild": "^0.28.1",
+    "happy-dom": "^20.10.6",
+    "typescript": "5.7.3",
+    "vite": "6",
+    "vitest": "3"
+  }
+}

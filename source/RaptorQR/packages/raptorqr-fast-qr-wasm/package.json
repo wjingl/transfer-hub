@@ -1,0 +1,26 @@
+{
+  "name": "@raptorqr/fast-qr-wasm",
+  "version": "0.1.1",
+  "description": "Generated fast_qr WASM renderer artifacts for RaptorQR",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "import": "./src/index.js"
+    },
+    "./wasm/*": "./src/wasm/*"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "src/",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit",
+    "test": "pnpm run build"
+  }
+}

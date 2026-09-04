@@ -1,0 +1,13 @@
+{
+  "builtAt": "2026-07-08T01:50:04.220654+00:00",
+  "fast_qr": "0.13",
+  "outputs": [
+    "package.json",
+    "raptorqr_fast_qr_wasm.d.ts",
+    "raptorqr_fast_qr_wasm.js",
+    "raptorqr_fast_qr_wasm_bg.wasm",
+    "raptorqr_fast_qr_wasm_bg.wasm.d.ts"
+  ],
+  "package": "raptorqr_fast_qr_wasm",
+  "target": "web"
+}
