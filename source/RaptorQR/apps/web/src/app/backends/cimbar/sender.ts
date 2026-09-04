@@ -1,4 +1,4 @@
-import { cimbarWorkerUrl } from './runtime';
+import { CIMBAR_FILES, cimbarFileUrl } from './runtime';
 
 export type CimbarMode = 'B' | 'Bm' | 'Bu' | '4C';
 
@@ -10,11 +10,23 @@ export interface CimbarSenderCallbacks {
   onError?: (message: string) => void;
 }
 
+export function cimbarModeValue(mode: CimbarMode): number {
+  if (mode === '4C') return 4;
+  if (mode === 'Bu') return 66;
+  if (mode === 'Bm') return 67;
+  return 68;
+}
+
+// Drives the *unmodified* official Cimbar send worker over the official
+// protocol used by libcimbar/web/main.js: init_window, then after startWasm
+// reply setMode() and nextFrame() to kick the animation loop, then setFPS /
+// importFile as requested.
 export class CimbarSender {
   private worker: Worker | null = null;
   private canvas: HTMLCanvasElement;
   private callbacks: CimbarSenderCallbacks;
   private ready = false;
+  private kicked = false;
 
   constructor(canvas: HTMLCanvasElement, callbacks: CimbarSenderCallbacks = {}) {
     this.canvas = canvas;
@@ -30,7 +42,7 @@ export class CimbarSender {
       throw new Error('当前浏览器不支持 OffscreenCanvas。');
     }
 
-    const worker = new Worker(cimbarWorkerUrl('send-worker.js'));
+    const worker = new Worker(cimbarFileUrl(CIMBAR_FILES.sendWorker));
     this.worker = worker;
     worker.onmessage = (event: MessageEvent) => this.handleMessage(event.data);
     worker.onerror = (event) => this.callbacks.onError?.(event.message || 'Cimbar 发送 Worker 出错。');
@@ -41,32 +53,47 @@ export class CimbarSender {
   }
 
   setMode(mode: CimbarMode): void {
-    this.post('setMode', [modeValue(mode)]);
+    this.post('setMode', [cimbarModeValue(mode)]);
+    this.kick();
   }
 
   setFps(fps: number): void {
     this.post('setFPS', [Math.max(1, Math.round(fps))]);
   }
 
-  setPaused(paused: boolean): void {
-    this.post('togglePause', [paused]);
-  }
-
   async encode(file: File): Promise<void> {
     await this.start();
+    if (!this.kicked) {
+      // Mirror the official page: default to B mode and start the loop before
+      // the first importFile arrives.
+      this.post('setMode', [68]);
+      this.kick();
+    }
     this.post('importFile', [file]);
   }
 
   stop(): void {
     if (this.worker && this.ready) {
-      this.post('togglePause', [true]);
+      this.worker.terminate();
+      this.worker = null;
+      this.ready = false;
+      this.kicked = false;
     }
   }
 
   dispose(): void {
-    this.worker?.terminate();
-    this.worker = null;
+    if (this.worker) {
+      this.worker.terminate();
+      this.worker = null;
+    }
     this.ready = false;
+    this.kicked = false;
+  }
+
+  private kick(): void {
+    if (!this.worker || !this.ready || this.kicked) return;
+    this.kicked = true;
+    this.worker.postMessage({ fun: 'nextFrame', args: [] });
   }
 
   private post(fun: string, args: unknown[]): void {
@@ -110,11 +137,4 @@ export class CimbarSender {
       };
     });
   }
-}
-
-function modeValue(mode: CimbarMode): number {
-  if (mode === '4C') return 4;
-  if (mode === 'Bu') return 66;
-  if (mode === 'Bm') return 67;
-  return 68;
 }
