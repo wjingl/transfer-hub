@@ -784,7 +784,7 @@ export function SenderPage() {
       isText = true;
     } else {
       if (!file) { setError('Please select a file.'); return; }
-      if (file.size > 8 * 1024 * 1024) { setError('File too large. Maximum size is 8 MB.'); return; }
+      if (file.size > 50 * 1024 * 1024) { setError('文件过大：单次传输上限 50 MB。'); return; }
       data = await file.arrayBuffer();
       isText = false;
     }
