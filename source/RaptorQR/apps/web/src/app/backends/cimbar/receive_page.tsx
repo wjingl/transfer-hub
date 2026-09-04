@@ -272,8 +272,10 @@ export function CimbarReceivePage() {
       const scheduleNext = (): void => {
         if (stoppedRef.current) return;
         if (pumpViaVideoFrameRef.current) {
-          const requestVideoFrameCallback = (video as HTMLVideoElement & { requestVideoFrameCallback: (callback: (now: number, metadata: unknown) => void) => number }).requestVideoFrameCallback;
-          pumpHandleRef.current = requestVideoFrameCallback((nextNow) => {
+          const videoElement = videoRef.current;
+          if (!videoElement) return;
+          const rvfc = videoElement as HTMLVideoElement & { requestVideoFrameCallback: (callback: (now: number, metadata: unknown) => void) => number };
+          pumpHandleRef.current = rvfc.requestVideoFrameCallback((nextNow) => {
             try {
               dispatchFrame(nextNow);
             } catch (cause) {
