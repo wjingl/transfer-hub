@@ -41,6 +41,10 @@ export function CimbarSendPage() {
       setError('请先选择要发送的文件。');
       return;
     }
+    if (file.size > 50 * 1024 * 1024) {
+      setError('文件过大：单次传输上限 50 MB。');
+      return;
+    }
     const canvas = canvasRef.current;
     if (!canvas) return;
     setError('');
