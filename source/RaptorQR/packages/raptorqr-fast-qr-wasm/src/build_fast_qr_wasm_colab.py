@@ -368,15 +368,13 @@ def default_output_dir(repo_root: Path | None) -> Path:
 def ensure_rust_toolchain() -> None:
     # Colab Ubuntu images typically ship without build-essential (cc / ld).
     # wasm-pack itself must compile proc-macro crates, which require a C linker.
-    run(["apt-get", "install", "-y", "-q", "build-essential"])
+    run_shell("apt-get install -y -q build-essential")
 
     if shutil.which("rustup"):
         cargo_bin = Path.home() / ".cargo" / "bin"
         os.environ["PATH"] = f"{cargo_bin}{os.pathsep}{os.environ['PATH']}"
     else:
-        installer = Path("/content/rustup-init.sh")
-        run(["curl", "-sSf", "-L", "-o", str(installer), "https://sh.rustup.rs"])
-        run(["/bin/bash", str(installer), "-y"])
+        run_shell("curl https://sh.rustup.rs -sSf | sh -s -- -y")
         cargo_bin = Path.home() / ".cargo" / "bin"
         os.environ["PATH"] = f"{cargo_bin}{os.pathsep}{os.environ['PATH']}"
 
@@ -456,6 +454,26 @@ def run(args: list[str], cwd: Path | None = None) -> None:
         raise SystemExit(return_code)
 
 
+def run_shell(command: str) -> None:
+    print("+", command, flush=True)
+    process = subprocess.Popen(
+        command,
+        shell=True,
+        executable="/bin/bash",
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+    )
+    assert process.stdout is not None
+    for line in process.stdout:
+        print(line, end="", flush=True)
+    return_code = process.wait()
+    if return_code != 0:
+        print("\n--- command failed ---", flush=True)
+        print(f"exit code: {return_code}", flush=True)
+        print("command:", command, flush=True)
+        raise SystemExit(return_code)
 
 
 if __name__ == "__main__":
