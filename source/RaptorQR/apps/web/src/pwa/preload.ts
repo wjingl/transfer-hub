@@ -86,6 +86,11 @@ function collectRuntimeAssets(): RuntimeAsset[] {
   const seen = new Set<string>();
   return assets.filter((asset) => {
     const absoluteUrl = new URL(asset.url, window.location.href).toString();
+    // Only cache http(s) resources. Browser extensions and other sources may
+    // inject chrome-extension:// assets into the DOM; those schemes cannot be
+    // fetched or stored through the Cache API and would block startup.
+    const protocol = new URL(absoluteUrl).protocol;
+    if (protocol !== 'http:' && protocol !== 'https:') return false;
     if (seen.has(absoluteUrl)) return false;
     seen.add(absoluteUrl);
     asset.url = absoluteUrl;
@@ -116,6 +121,9 @@ function documentAssetLabel(link: HTMLLinkElement): string {
 }
 
 async function cacheRuntimeAsset(asset: RuntimeAsset): Promise<void> {
+  const protocol = new URL(asset.url, window.location.href).protocol;
+  if (protocol !== 'http:' && protocol !== 'https:') return;
+
   const request = new Request(asset.url, {
     cache: 'reload',
     credentials: 'same-origin',
