@@ -109,6 +109,18 @@ archive is available. To use an already downloaded/extracted release, set
 `CIMBAR_SOURCE_DIR`. The resulting assets are placed in
 `apps/web/public/cimbar` and copied into `apps/web/dist/cimbar`.
 
+### Opening the built app locally
+
+Do not double-click `apps/web/dist/index.html`; `file://` blocks the module,
+Worker, WASM and fetch requirements. After building, double-click:
+
+```text
+apps/web/dist/open-transfer-hub.bat
+```
+
+or run `python -m http.server 8080 --directory apps/web/dist` and open
+`http://127.0.0.1:8080/`.
+
 ## FAQ
 
 ### Can I use RaptorQR offline?

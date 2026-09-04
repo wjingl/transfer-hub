@@ -13,7 +13,37 @@ const S = {
   status: { color: '#8b949e', fontSize: 13, marginTop: 10 } as CSSProps,
   warning: { color: '#d29922', background: '#2d1b00', border: '1px solid #9e6a03', padding: '10px 12px', borderRadius: 8, fontSize: 12, lineHeight: 1.5 } as CSSProps,
   result: { background: '#0d1117', border: '1px solid #30363d', borderRadius: 8, padding: 14, marginTop: 12 } as CSSProps,
+  progressBar: {
+    height: 8,
+    background: '#21262d',
+    borderRadius: 999,
+    overflow: 'hidden',
+    marginTop: 6,
+  } as CSSProps,
+  progressFill: (widthPercent: number): CSSProps => ({
+    width: `${widthPercent}%`,
+    height: '100%',
+    background: '#58a6ff',
+    transition: 'width 160ms ease',
+  }),
+  statsBar: {
+    display: 'flex',
+    gap: 16,
+    alignItems: 'center',
+    fontSize: 12,
+    color: '#8b949e',
+    marginTop: 8,
+    flexWrap: 'wrap',
+  } as CSSProps,
+  statValue: {
+    color: '#c9d1d9',
+    fontWeight: 600,
+    fontFamily: 'monospace',
+    fontSize: 13,
+  } as CSSProps,
 } as const;
+
+const WORKER_READY_TIMEOUT_MS = 15000;
 
 export function CimbarReceivePage() {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -22,18 +52,81 @@ export function CimbarReceivePage() {
   const streamRef = useRef<MediaStream | null>(null);
   const rafRef = useRef<number>(0);
   const inFlightRef = useRef(false);
+  const captureStartedRef = useRef(false);
+  const readyTimerRef = useRef<number | null>(null);
   const [running, setRunning] = useState(false);
+  const [initializing, setInitializing] = useState(false);
   const [status, setStatus] = useState('允许摄像头后，对准 Cimbar 发送画面。');
   const [error, setError] = useState('');
   const [progress, setProgress] = useState<number[]>([]);
-  const [result, setResult] = useState<{ data: ArrayBuffer; filename: string } | null>(null);
+  const [decodedPackets, setDecodedPackets] = useState(0);
+  const [result, setResult] = useState<{ data: ArrayBuffer; filename: string; mime: string } | null>(null);
 
   useEffect(() => () => stop(), []);
+
+  const clearReadyTimer = () => {
+    if (readyTimerRef.current !== null) {
+      window.clearTimeout(readyTimerRef.current);
+      readyTimerRef.current = null;
+    }
+  };
+
+  const startCapture = (worker: Worker) => {
+    if (captureStartedRef.current) return;
+    captureStartedRef.current = true;
+
+    const tick = () => {
+      if (!captureStartedRef.current) return;
+      const currentVideo = videoRef.current;
+      const canvas = canvasRef.current;
+      if (currentVideo && canvas && !inFlightRef.current && currentVideo.readyState >= 2 && currentVideo.videoWidth > 0) {
+        const max = 640;
+        const scale = Math.min(1, max / Math.max(currentVideo.videoWidth, currentVideo.videoHeight));
+        const width = Math.max(1, Math.round(currentVideo.videoWidth * scale));
+        const height = Math.max(1, Math.round(currentVideo.videoHeight * scale));
+        if (canvas.width !== width || canvas.height !== height) {
+          canvas.width = width;
+          canvas.height = height;
+        }
+        const context = canvas.getContext('2d');
+        if (context) {
+          context.drawImage(currentVideo, 0, 0, width, height);
+          const pixels = context.getImageData(0, 0, width, height).data.buffer;
+          inFlightRef.current = true;
+          worker.postMessage({ type: 'frame', pixels, width, height, format: 'RGBA' }, [pixels]);
+          window.setTimeout(() => { inFlightRef.current = false; }, 80);
+        }
+      }
+      rafRef.current = requestAnimationFrame(tick);
+    };
+    rafRef.current = requestAnimationFrame(tick);
+  };
+
+  const stop = () => {
+    captureStartedRef.current = false;
+    cancelAnimationFrame(rafRef.current);
+    rafRef.current = 0;
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+    if (videoRef.current) {
+      videoRef.current.pause();
+      videoRef.current.srcObject = null;
+    }
+    workerRef.current?.terminate();
+    workerRef.current = null;
+    inFlightRef.current = false;
+    clearReadyTimer();
+    setRunning(false);
+    setInitializing(false);
+  };
 
   const start = async () => {
     setError('');
     setResult(null);
     setProgress([]);
+    setDecodedPackets(0);
+    captureStartedRef.current = false;
+
     if (!navigator.mediaDevices?.getUserMedia) {
       setError('当前浏览器不支持摄像头。请使用 HTTPS/localhost，或改用 RaptorQR GIF 接收。');
       return;
@@ -57,79 +150,75 @@ export function CimbarReceivePage() {
 
       const worker = new Worker(cimbarWorkerUrl('cimbar-recv-worker.js'));
       workerRef.current = worker;
+      setInitializing(true);
+      setStatus('正在初始化 Cimbar 解码器…');
+
+      // Fail clearly if the WASM runtime never reports ready.
+      readyTimerRef.current = window.setTimeout(() => {
+        if (captureStartedRef.current) return;
+        setError('Cimbar 解码器初始化超时，请刷新页面后重试。');
+        setInitializing(false);
+      }, WORKER_READY_TIMEOUT_MS);
+
       worker.onmessage = (event: MessageEvent) => {
         const message = event.data || {};
         if (message.type === 'ready') {
+          clearReadyTimer();
           worker.postMessage({ type: 'configure', mode: 0 });
-          setStatus('正在扫描 Cimbar 画面…');
-        } else if (message.type === 'progress') {
-          setProgress(Array.isArray(message.progress) ? message.progress : []);
-        } else if (message.type === 'complete') {
-          setResult({ data: message.data, filename: message.filename || 'cimbar-recovered.bin' });
-          setStatus('接收完成。');
+          setInitializing(false);
+          setRunning(true);
+          setStatus('正在扫描：将 Cimbar 彩色画面保持在取景框内');
+          startCapture(worker);
+          return;
+        }
+        if (message.type === 'progress') {
+          const next = Array.isArray(message.progress) ? message.progress : [];
+          setProgress(next.filter((value: unknown) => Number.isFinite(Number(value))));
+          return;
+        }
+        if (message.type === 'scan' && message.result === 'packet') {
+          setDecodedPackets((count) => count + 1);
+          return;
+        }
+        if (message.type === 'complete') {
+          setResult({
+            data: message.data,
+            filename: message.filename || 'cimbar-recovered.bin',
+            mime: message.mime || 'application/octet-stream',
+          });
+          setStatus('接收完成 ✓');
           stop();
-        } else if (message.type === 'scan' && message.result === 'packet') {
-          setStatus('已读取数据包，继续扫描…');
-        } else if (message.type === 'error') {
+          return;
+        }
+        if (message.type === 'error') {
           setError(message.message || 'Cimbar 解码失败。');
+          setInitializing(false);
         }
       };
-      worker.onerror = (event) => setError(event.message || 'Cimbar 解码 Worker 出错。');
-      setRunning(true);
-      inFlightRef.current = false;
-      const capture = () => {
-        if (!streamRef.current || !videoRef.current || !canvasRef.current) return;
-        const currentVideo = videoRef.current;
-        const canvas = canvasRef.current;
-        if (!inFlightRef.current && currentVideo.readyState >= 2 && currentVideo.videoWidth > 0) {
-          const max = 640;
-          const scale = Math.min(1, max / Math.max(currentVideo.videoWidth, currentVideo.videoHeight));
-          const width = Math.max(1, Math.round(currentVideo.videoWidth * scale));
-          const height = Math.max(1, Math.round(currentVideo.videoHeight * scale));
-          canvas.width = width;
-          canvas.height = height;
-          const context = canvas.getContext('2d');
-          if (context) {
-            context.drawImage(currentVideo, 0, 0, width, height);
-            const pixels = context.getImageData(0, 0, width, height).data.buffer;
-            inFlightRef.current = true;
-            worker.postMessage({ type: 'frame', pixels, width, height, format: 'RGBA' }, [pixels]);
-            window.setTimeout(() => { inFlightRef.current = false; }, 80);
-          }
-        }
-        rafRef.current = requestAnimationFrame(capture);
+      worker.onerror = (event) => {
+        setError(event.message || 'Cimbar 解码 Worker 出错。');
+        setInitializing(false);
+        clearReadyTimer();
       };
-      rafRef.current = requestAnimationFrame(capture);
     } catch (cause) {
       setError(`摄像头启动失败：${cause instanceof Error ? cause.message : String(cause)}`);
       stop();
     }
   };
 
-  function stop() {
-    cancelAnimationFrame(rafRef.current);
-    rafRef.current = 0;
-    streamRef.current?.getTracks().forEach((track) => track.stop());
-    streamRef.current = null;
-    if (videoRef.current) {
-      videoRef.current.pause();
-      videoRef.current.srcObject = null;
-    }
-    workerRef.current?.terminate();
-    workerRef.current = null;
-    inFlightRef.current = false;
-    setRunning(false);
-  }
-
   const download = () => {
     if (!result) return;
-    const url = URL.createObjectURL(new Blob([result.data], { type: 'application/octet-stream' }));
+    const url = URL.createObjectURL(new Blob([result.data], { type: result.mime || 'application/octet-stream' }));
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = result.filename;
+    anchor.download = result.filename || 'cimbar-recovered.bin';
     anchor.click();
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
+
+  const overallPercent = progress.length > 0
+    ? Math.max(...progress.map((value) => Math.max(0, Math.min(100, value * 100))))
+    : 0;
 
   return (
     <div>
@@ -139,10 +228,22 @@ export function CimbarReceivePage() {
           将摄像头对准发送端的 Cimbar 画面。应用会自动提取彩色条码并重组文件。
         </p>
         <div style={S.row}>
-          {!running ? <button type="button" style={S.button} onClick={start}>开始接收</button> : <button type="button" style={S.secondary} onClick={stop}>停止扫描</button>}
+          {!running && !initializing
+            ? <button type="button" style={S.button} onClick={start}>开始接收</button>
+            : <button type="button" style={S.secondary} onClick={stop}>停止扫描</button>}
         </div>
         <div role="status" aria-live="polite" style={S.status}>{status}</div>
         {error && <div role="alert" style={{ ...S.warning, marginTop: 10 }}>⚠ {error}</div>}
+
+        {(running || progress.length > 0 || decodedPackets > 0) && (
+          <div style={S.statsBar} aria-label="Cimbar 接收统计">
+            <span>数据包 <span style={S.statValue}>{decodedPackets}</span></span>
+            {progress.length > 0 && (
+              <span>进度 <span style={S.statValue}>{overallPercent.toFixed(0)}%</span></span>
+            )}
+            {running && <span>{progress.length > 0 ? '接收中…' : '等待有效数据包…'}</span>}
+          </div>
+        )}
       </section>
 
       <section style={S.section}>
@@ -151,7 +252,11 @@ export function CimbarReceivePage() {
         <canvas ref={canvasRef} hidden />
         {progress.length > 0 && (
           <div style={{ marginTop: 12 }} aria-label="Cimbar 接收进度">
-            {progress.map((value, index) => <div key={index} style={{ height: 8, background: '#21262d', borderRadius: 999, overflow: 'hidden', marginTop: 6 }}><div style={{ width: `${Math.max(0, Math.min(100, value * 100))}%`, height: '100%', background: '#58a6ff' }} /></div>)}
+            {progress.map((value, index) => (
+              <div key={index} style={S.progressBar}>
+                <div style={S.progressFill(Math.max(0, Math.min(100, value * 100)))} />
+              </div>
+            ))}
           </div>
         )}
       </section>

@@ -1,32 +1,47 @@
 'use strict';
 
 let initialized = false;
+let pendingFrames = [];
 const buffers = new Map();
 
 var Module = {
   preRun: [],
-  locateFile(path) {
-    return new URL(path, self.location.href).toString();
+  locateFile() {
+    return new URL('./cimbar_js.wasm', self.location.href).toString();
   },
   onRuntimeInitialized() {
     initialized = true;
     self.postMessage({ type: 'ready' });
+    const queued = pendingFrames;
+    pendingFrames = [];
+    for (const frame of queued) {
+      void processFrame(frame);
+    }
   },
 };
 
 importScripts('./cimbar_js.js');
 
-self.onmessage = async (event) => {
+self.onmessage = (event) => {
   const message = event.data || {};
   if (message.type === 'configure') {
-    if (!initialized) return fail('Cimbar WASM is not initialized.');
+    if (!initialized) return;
     const mode = Number(message.mode || 0);
     if (mode > 0) Module._cimbard_configure_decode(mode);
     return;
   }
   if (message.type !== 'frame') return;
-  if (!initialized) return fail('Cimbar WASM is not initialized.');
 
+  // Frames that arrive before the WASM runtime is ready are queued and
+  // processed once initialization completes instead of failing.
+  if (!initialized) {
+    pendingFrames.push(message);
+    return;
+  }
+  void processFrame(message);
+};
+
+async function processFrame(message) {
   try {
     const pixels = new Uint8Array(message.pixels);
     const image = alloc('image', pixels.length);
@@ -44,6 +59,7 @@ self.onmessage = async (event) => {
 
     if (length <= 0) {
       self.postMessage({ type: 'scan', result: length === 0 ? 'empty' : 'miss' });
+      self.postMessage({ type: 'frameDone' });
       return;
     }
 
@@ -62,11 +78,13 @@ self.onmessage = async (event) => {
       self.postMessage({ type: 'complete', ...result }, result.data ? [result.data] : []);
     } else {
       self.postMessage({ type: 'scan', result: 'packet', report: typeof report === 'string' ? report : undefined });
+      self.postMessage({ type: 'frameDone' });
     }
   } catch (error) {
     fail(error instanceof Error ? error.message : String(error));
+    self.postMessage({ type: 'frameDone' });
   }
-};
+}
 
 function alloc(name, size) {
   let view = buffers.get(name);
