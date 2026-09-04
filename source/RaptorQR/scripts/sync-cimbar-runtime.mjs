@@ -1,66 +1,67 @@
-import { createWriteStream } from 'node:fs';
-import { mkdir, readdir, rm, cp, stat } from 'node:fs/promises';
-import { readFile, writeFile } from 'node:fs/promises';
-import { pipeline } from 'node:stream/promises';
+// Syncs the *unmodified* official Cimbar WASM runtime (sz3/libcimbar release
+// archive) into apps/web/public/cimbar/.
+//
+// Policy: we ship the official runtime artifacts byte-for-byte, under their
+// official release filenames. No official file is patched or renamed. All
+// integration (driving the official send/recv workers over their stock
+// protocols, the main-thread decoder sink) lives in our own sources.
+import { mkdir, readdir, rm, cp } from 'node:fs/promises';
+import { writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import https from 'node:https';
+import { pipeline } from 'node:stream/promises';
+import { createWriteStream } from 'node:fs';
+import { stat } from 'node:fs/promises';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const target = join(root, 'apps', 'web', 'public', 'cimbar');
 const version = process.env.CIMBAR_RUNTIME_VERSION || 'v0.6.8';
-const sourceDir = process.env.CIMBAR_SOURCE_DIR
-  ? resolve(process.env.CIMBAR_SOURCE_DIR)
-  : null;
 const archive = join(root, '.cache', `cimbar-${version}.tar.gz`);
 
+// The pinned official release files the app drives (runtime.ts CIMBAR_FILES).
+const PINNED = {
+  glue: 'cimbar_js.2026-08-21T2336.js',
+  wasm: 'cimbar_js.2026-08-21T2336.wasm',
+  send: 'send.2026-08-21T2336.js',
+  sendWorker: 'send-worker.2026-08-21T2336.js',
+  recvWorker: 'recv-worker.2026-08-21T2336.js',
+};
+
 await mkdir(target, { recursive: true });
-const extracted = sourceDir ?? await downloadAndExtract();
-const existingAssets = await readdir(target);
-for (const asset of existingAssets) {
-  if (/^cimbar_js\.\d.*\.(js|wasm)$/.test(asset)) {
-    await rm(join(target, asset), { force: true });
-  }
-}
+const extracted = await downloadAndExtract();
 const files = await readdir(extracted);
-const find = (prefix, suffix) => files.find((file) => file.startsWith(prefix) && file.endsWith(suffix));
 
-const wasm = find('cimbar_js.', '.wasm');
-const glue = find('cimbar_js.', '.js');
-if (!wasm || !glue) throw new Error(`Cimbar ${version} package has no wasm/glue runtime.`);
-
-const required = [
-  [glue, 'cimbar_js.js'],
-  [wasm, 'cimbar_js.wasm'],
-  [find('send.', '.js'), 'send.js'],
-  [find('send-worker.', '.js'), 'send-worker.js'],
-  [find('recv.', '.js'), 'recv.js'],
-  [find('recv-worker.', '.js'), 'recv-worker.js'],
-  [find('zstd.', '.js'), 'zstd.js'],
-];
-for (const [from, to] of required) {
-  if (!from) throw new Error(`Cimbar ${version} package is missing ${to}.`);
-  await cp(join(extracted, from), join(target, to));
+for (const name of Object.values(PINNED)) {
+  if (!files.includes(name)) {
+    throw new Error(
+      `Cimbar ${version} archive does not contain ${name}; bump scripts/sync-cimbar-runtime.mjs PINNED and ` +
+      'apps/web/src/app/backends/cimbar/runtime.ts to the new official names.',
+    );
+  }
+  await cp(join(extracted, name), join(target, name));
 }
-await patchRuntime(join(target, 'send-worker.js'), [
-  ["importScripts('send.2026-08-21T2336.js');", "importScripts('send.js');"],
-  ["importScripts('cimbar_js.2026-08-21T2336.js');", "importScripts('cimbar_js.js');"],
-  ["  preRun: [],\n  onRuntimeInitialized:", "  preRun: [],\n  locateFile: function () { return new URL('./cimbar_js.wasm', self.location.href).toString(); },\n  onRuntimeInitialized:"],
-  ["      self.postMessage({ fun: 'startWasm', args: [true] });", "      self.postMessage({ fun: 'startWasm', args: [true] });\n      Send.setMode(68);\n      Send.nextFrame(performance.now());"],
-]);
-await patchRuntime(join(target, 'recv-worker.js'), [
-  ["importScripts('cimbar_js.2026-08-21T2336.js');", "importScripts('cimbar_js.js');"],
-  ["  preRun: [],\n  onRuntimeInitialized:", "  preRun: [],\n  locateFile: function () { return new URL('./cimbar_js.wasm', self.location.href).toString(); },\n  onRuntimeInitialized:"],
-]);
-await patchRuntime(join(target, 'send.js'), [
-  ['  var _pause = 0;\n  var _showStats = false;', '  var _pause = 0;\n  var _paused = false;\n  var _showStats = false;'],
-  ['      window.requestAnimationFrame(Send.nextFrame);', '      setTimeout(function () { Send.nextFrame(performance.now()); }, _interval);'],
-  ['      // pause is a cooldown. We pause to help autofocus, but we don\'t want to do it forever...\n      if (pause === undefined) {\n        pause = !Send.isPaused();\n      }\n      _pause = pause ? 15 : 0;', '      _paused = pause === undefined ? !_paused : Boolean(pause);\n      _pause = 0;'],
-  ['      return _pause > 0;', '      return _paused || _pause > 0;'],
-]);
-await writeFile(join(target, 'VERSION'), `${version}\n${wasm}\n`, 'utf8');
-console.log(`Cimbar runtime ${version} synced to ${target}`);
+
+// Remove stale runtime files that no longer belong to this build so the app can
+// never accidentally load an old/patch-era artifact.
+const stale = ['cimbar_js.js', 'cimbar_js.wasm', 'send.js', 'recv.js', 'send-worker.js', 'recv-worker.js', 'zstd.js', 'cimbar-recv-worker.js'];
+for (const name of stale) {
+  await rm(join(target, name), { force: true });
+}
+
+const versionLines = [];
+for (const name of Object.values(PINNED)) {
+  versionLines.push(`${name} ${await sha256(join(target, name))}`);
+}
+await writeFile(
+  join(target, 'VERSION'),
+  `official sz3/libcimbar runtime ${version} (pristine, unmodified)\n` +
+    `archive: ${basename(archive)}\n` +
+    versionLines.join('\n') + '\n',
+  'utf8',
+);
+console.log(`Cimbar runtime ${version} synced (pristine) to ${target}`);
 
 async function downloadAndExtract() {
   const cacheDir = dirname(archive);
@@ -78,19 +79,15 @@ async function downloadAndExtract() {
   await mkdir(out, { recursive: true });
   execFileSync('tar', ['-xzf', basename(archive), '-C', basename(out)], {
     cwd: cacheDir,
-    stdio: 'inherit',
+    stdio: 'ignore',
   });
   return out;
 }
 
-async function patchRuntime(path, replacements) {
-  let source = await readFile(path, 'utf8');
-  for (const [before, after] of replacements) {
-    if (source.includes(after)) continue;
-    if (!source.includes(before)) throw new Error(`Cimbar runtime patch did not match in ${path}: ${before}`);
-    source = source.replace(before, after);
-  }
-  await writeFile(path, source, 'utf8');
+async function sha256(path) {
+  const { createHash } = await import('node:crypto');
+  const { readFile } = await import('node:fs/promises');
+  return createHash('sha256').update(await readFile(path)).digest('hex').slice(0, 16);
 }
 
 function download(url, destination) {
