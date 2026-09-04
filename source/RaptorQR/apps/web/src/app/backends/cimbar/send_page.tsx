@@ -11,7 +11,7 @@ const S = {
   select: { width: '100%', background: '#0d1117', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: 7, padding: '9px 10px', fontSize: 14 } as CSSProps,
   button: { background: '#238636', color: '#fff', border: 0, borderRadius: 7, padding: '10px 16px', fontWeight: 700, cursor: 'pointer' } as CSSProps,
   secondary: { background: '#21262d', color: '#f0f6fc', border: '1px solid #30363d', borderRadius: 7, padding: '10px 14px', cursor: 'pointer' } as CSSProps,
-  canvas: { width: 'min(100%, 640px)', aspectRatio: '1', background: '#fff', imageRendering: 'pixelated', display: 'block', margin: '14px auto 0', borderRadius: 8 } as CSSProps,
+  canvas: { width: 'min(100%, 640px)', aspectRatio: '1', background: '#0d1117', display: 'block', margin: '14px auto 0', borderRadius: 8 } as CSSProps,
   status: { color: '#8b949e', fontSize: 13, marginTop: 10 } as CSSProps,
   warning: { color: '#d29922', background: '#2d1b00', border: '1px solid #9e6a03', padding: '10px 12px', borderRadius: 8, fontSize: 12, lineHeight: 1.5 } as CSSProps,
 } as const;
@@ -30,7 +30,7 @@ export function CimbarSendPage() {
   const [mode, setMode] = useState<CimbarMode>('B');
   const [fps, setFps] = useState(15);
   const [running, setRunning] = useState(false);
-  const [paused, setPaused] = useState(false);
+  const [canvasKey, setCanvasKey] = useState(0);
   const [status, setStatus] = useState('选择文件后开始发送。');
   const [error, setError] = useState('');
 
@@ -45,24 +45,25 @@ export function CimbarSendPage() {
     if (!canvas) return;
     setError('');
     setRunning(true);
-    setPaused(false);
     setStatus('正在初始化 Cimbar WASM…');
     try {
-      const sender = senderRef.current ?? new CimbarSender(canvas, {
+      const sender = new CimbarSender(canvas, {
         onReady: () => setStatus('Cimbar 已就绪，正在发送。'),
         onAspectRatio: (ratio) => { canvas.style.aspectRatio = String(ratio); },
         onActive: () => setStatus('正在发送 · 可用另一台设备扫描画面'),
-        onError: (message) => setError(message),
+        onError: (message) => { setError(message); setRunning(false); },
       });
       senderRef.current = sender;
       await sender.start();
-      sender.setPaused(false);
       sender.setMode(mode);
       sender.setFps(fps);
       await sender.encode(file);
       setStatus(`正在发送 ${file.name}`);
     } catch (cause) {
+      senderRef.current?.dispose();
+      senderRef.current = null;
       setRunning(false);
+      setCanvasKey((key) => key + 1);
       setError(cause instanceof Error ? cause.message : String(cause));
       setStatus('发送未启动。');
     }
@@ -70,16 +71,10 @@ export function CimbarSendPage() {
 
   const stop = () => {
     senderRef.current?.stop();
+    senderRef.current = null;
     setRunning(false);
-    setPaused(true);
-    setStatus('已停止。再次点击“开始发送”可继续使用当前画面。');
-  };
-
-  const togglePause = () => {
-    const next = !paused;
-    senderRef.current?.setPaused(next);
-    setPaused(next);
-    setStatus(next ? '已暂停（便于对焦或暂时停止闪烁）。' : '正在发送。');
+    setStatus('已停止。再次点击“开始发送”可重新发送当前文件。');
+    setCanvasKey((key) => key + 1);
   };
 
   const changeMode = (value: CimbarMode) => {
@@ -113,8 +108,9 @@ export function CimbarSendPage() {
           </label>
         </div>
         <div style={{ ...S.row, marginTop: 14 }}>
-          {!running ? <button type="button" style={S.button} onClick={start}>开始发送</button> : <button type="button" style={S.secondary} onClick={togglePause}>{paused ? '继续发送' : '暂停发送'}</button>}
-          {running && <button type="button" style={S.secondary} onClick={stop}>停止</button>}
+          {!running
+            ? <button type="button" style={S.button} onClick={start}>开始发送</button>
+            : <button type="button" style={S.secondary} onClick={stop}>停止</button>}
         </div>
         <div role="status" aria-live="polite" style={S.status}>{status}</div>
         {error && <div role="alert" style={{ ...S.warning, marginTop: 10 }}>⚠ {error}</div>}
@@ -122,9 +118,9 @@ export function CimbarSendPage() {
 
       <section style={S.section}>
         <div style={S.label}>播放画面</div>
-        <canvas ref={canvasRef} width={640} height={640} aria-label="Cimbar 实时传输画面" style={S.canvas} />
+        <canvas key={canvasKey} ref={canvasRef} width={640} height={640} aria-label="Cimbar 实时传输画面" style={S.canvas} />
         <div style={S.warning}>
-          Cimbar 会显示快速变化的彩色图案。对闪烁敏感时请降低速度、暂停或停止播放；不要长时间直视画面。
+          Cimbar 会显示快速变化的彩色图案。对闪烁敏感时请调低速度或停止播放；不要长时间直视画面。
         </div>
       </section>
     </div>
