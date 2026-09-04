@@ -3,27 +3,15 @@
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
 
-# Pick a free port between 8765 and 8999 (deliberately avoids 8080).
-$listener = $null
-$port = 0
-for ($attempt = 0; $attempt -lt 100; $attempt++) {
-    $candidate = Get-Random -Minimum 8765 -Maximum 8999
-    $test = New-Object System.Net.HttpListener
-    $test.Prefixes.Add("http://127.0.0.1:$candidate/")
-    try {
-        $test.Start()
-        $listener = $test
-        $port = $candidate
-        break
-    } catch {
-        try { $test.Close() } catch {}
-    }
-}
-if (-not $listener) {
-    Write-Host "Unable to find a free port." -ForegroundColor Red
-    Read-Host "Press Enter to exit"
-    exit 1
-}
+# Ask the OS for a free localhost port (never a fixed port like 8080).
+$probe = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Loopback, 0)
+$probe.Start()
+$port = $probe.LocalEndpoint.Port
+$probe.Stop()
+
+$listener = New-Object System.Net.HttpListener
+$listener.Prefixes.Add("http://127.0.0.1:$port/")
+$listener.Start()
 
 $mime = @{
     '.html'        = 'text/html; charset=utf-8'
