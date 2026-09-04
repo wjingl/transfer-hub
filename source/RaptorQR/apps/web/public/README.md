@@ -4,23 +4,25 @@
 
 不要直接双击 `index.html`。浏览器的 `file://` 安全策略会阻止 ES Module、Worker、WASM、`fetch()` 和 Service Worker 正常工作。
 
-Windows 用户可以直接双击：
+启动器会在本机临时启动网页服务并自动打开浏览器，端口由操作系统自动分配（不使用 8080），关闭窗口即停止。
+
+Windows（无需安装任何东西，使用系统自带 PowerShell）：
 
 ```text
-open-transfer-hub.bat
+双击 open-transfer-hub.bat
 ```
 
-它会在本机启动 HTTP 服务并打开：
+macOS / Linux（需 Python 3，多数系统默认自带）：
 
 ```text
-http://127.0.0.1:8080/
+bash open-transfer-hub.sh
+# 或
+python3 server.py
 ```
 
-也可以手动运行：
+手动运行（备选）：
 
 ```bash
-python -m http.server 8080
+python3 server.py
 ```
-
-然后打开 `http://localhost:8080/`。
 
