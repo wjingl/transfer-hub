@@ -13,19 +13,39 @@ const S = {
   status: { color: '#8b949e', fontSize: 13, marginTop: 10 } as CSSProps,
   warning: { color: '#d29922', background: '#2d1b00', border: '1px solid #9e6a03', padding: '10px 12px', borderRadius: 8, fontSize: 12, lineHeight: 1.5 } as CSSProps,
   result: { background: '#0d1117', border: '1px solid #30363d', borderRadius: 8, padding: 14, marginTop: 12 } as CSSProps,
-  progressBar: {
+  progressArea: {
+    background: '#0d1117',
+    border: '1px solid #30363d',
+    borderRadius: 10,
+    padding: '12px 14px',
+    marginTop: 12,
+  } as CSSProps,
+  progressTrack: {
     height: 8,
     background: '#21262d',
     borderRadius: 999,
     overflow: 'hidden',
     marginTop: 6,
+    position: 'relative',
   } as CSSProps,
   progressFill: (widthPercent: number): CSSProps => ({
     width: `${widthPercent}%`,
     height: '100%',
     background: '#58a6ff',
-    transition: 'width 160ms ease',
+    transition: 'width 200ms ease',
   }),
+  indeterminateThumb: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    height: '100%',
+    width: '34%',
+    borderRadius: 999,
+    background: 'linear-gradient(90deg, #58a6ff, #3fb950)',
+    animation: 'transferhub-scan 1.15s ease-in-out infinite',
+  },
+  progressHint: { color: '#8b949e', fontSize: 12, marginTop: 8 } as CSSProps,
+  percentText: { color: '#f0f6fc', fontWeight: 700, fontSize: 14 } as CSSProps,
   statsBar: {
     display: 'flex',
     gap: 16,
@@ -54,15 +74,33 @@ export function CimbarReceivePage() {
   const inFlightRef = useRef(false);
   const captureStartedRef = useRef(false);
   const readyTimerRef = useRef<number | null>(null);
+  const packetCountRef = useRef(0);
   const [running, setRunning] = useState(false);
   const [initializing, setInitializing] = useState(false);
   const [status, setStatus] = useState('允许摄像头后，对准 Cimbar 发送画面。');
   const [error, setError] = useState('');
   const [progress, setProgress] = useState<number[]>([]);
   const [decodedPackets, setDecodedPackets] = useState(0);
+  const [elapsedSec, setElapsedSec] = useState(0);
+  const [packetsPerSec, setPacketsPerSec] = useState(0);
   const [result, setResult] = useState<{ data: ArrayBuffer; filename: string; mime: string } | null>(null);
 
   useEffect(() => () => stop(), []);
+
+  // Per-second activity stats while scanning.
+  useEffect(() => {
+    if (!running) return;
+    setElapsedSec(0);
+    setPacketsPerSec(0);
+    let lastCount = packetCountRef.current;
+    const id = window.setInterval(() => {
+      const current = packetCountRef.current;
+      setPacketsPerSec(current - lastCount);
+      lastCount = current;
+      setElapsedSec((seconds) => seconds + 1);
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [running]);
 
   const clearReadyTimer = () => {
     if (readyTimerRef.current !== null) {
@@ -124,7 +162,10 @@ export function CimbarReceivePage() {
     setError('');
     setResult(null);
     setProgress([]);
+    packetCountRef.current = 0;
     setDecodedPackets(0);
+    setElapsedSec(0);
+    setPacketsPerSec(0);
     captureStartedRef.current = false;
 
     if (!navigator.mediaDevices?.getUserMedia) {
@@ -177,7 +218,8 @@ export function CimbarReceivePage() {
           return;
         }
         if (message.type === 'scan' && message.result === 'packet') {
-          setDecodedPackets((count) => count + 1);
+          packetCountRef.current += 1;
+          setDecodedPackets(packetCountRef.current);
           return;
         }
         if (message.type === 'complete') {
@@ -219,9 +261,12 @@ export function CimbarReceivePage() {
   const overallPercent = progress.length > 0
     ? Math.max(...progress.map((value) => Math.max(0, Math.min(100, value * 100))))
     : 0;
+  const hasDeterminateProgress = progress.length > 0;
 
   return (
     <div>
+      <style>{`@keyframes transferhub-scan { 0% { left: -35%; } 60% { left: 100%; } 100% { left: 100%; } }`}</style>
+
       <section style={S.section}>
         <div style={S.label}>Cimbar 摄像头接收</div>
         <p style={{ color: '#c9d1d9', fontSize: 14, lineHeight: 1.5, margin: '0 0 12px' }}>
@@ -235,13 +280,52 @@ export function CimbarReceivePage() {
         <div role="status" aria-live="polite" style={S.status}>{status}</div>
         {error && <div role="alert" style={{ ...S.warning, marginTop: 10 }}>⚠ {error}</div>}
 
-        {(running || progress.length > 0 || decodedPackets > 0) && (
-          <div style={S.statsBar} aria-label="Cimbar 接收统计">
-            <span>数据包 <span style={S.statValue}>{decodedPackets}</span></span>
-            {progress.length > 0 && (
-              <span>进度 <span style={S.statValue}>{overallPercent.toFixed(0)}%</span></span>
+        {/* ── Always-visible progress panel while scanning ── */}
+        {(running || hasDeterminateProgress) && (
+          <div style={S.progressArea} aria-label="Cimbar 接收进度">
+            {hasDeterminateProgress ? (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                  <span style={{ color: '#8b949e', fontSize: 12 }}>重组进度</span>
+                  <span style={S.percentText}>{overallPercent.toFixed(0)}%</span>
+                </div>
+                <div style={S.progressTrack}>
+                  <div style={S.progressFill(overallPercent)} />
+                </div>
+                {progress.map((value, index) => (
+                  <div key={index} style={{ ...S.progressTrack, marginTop: 6 }}>
+                    <div style={S.progressFill(Math.max(0, Math.min(100, value * 100)))} />
+                  </div>
+                ))}
+                <div style={S.progressHint}>数据到达中，正在重组文件…</div>
+              </>
+            ) : (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                  <span style={{ color: '#8b949e', fontSize: 12 }}>正在扫描</span>
+                  {decodedPackets > 0
+                    ? <span style={S.percentText}>已锁定信号</span>
+                    : <span style={{ color: '#d29922', fontSize: 12 }}>等待有效画面…</span>}
+                </div>
+                <div style={S.progressTrack}>
+                  <div style={S.indeterminateThumb} />
+                </div>
+                <div style={S.progressHint}>
+                  {decodedPackets > 0
+                    ? `正在持续接收数据（数据包 ${decodedPackets}）…`
+                    : '对准发送端画面并保持静止；解码到首个数据包后进度将开始增长。'}
+                </div>
+              </>
             )}
-            {running && <span>{progress.length > 0 ? '接收中…' : '等待有效数据包…'}</span>}
+
+            <div style={S.statsBar} aria-label="Cimbar 接收统计">
+              <span>数据包 <span style={S.statValue}>{decodedPackets}</span></span>
+              <span>速率 <span style={S.statValue}>{packetsPerSec} /s</span></span>
+              <span>已运行 <span style={S.statValue}>{formatDuration(elapsedSec)}</span></span>
+              {hasDeterminateProgress && (
+                <span>进度 <span style={S.statValue}>{overallPercent.toFixed(0)}%</span></span>
+              )}
+            </div>
           </div>
         )}
       </section>
@@ -250,15 +334,6 @@ export function CimbarReceivePage() {
         <div style={S.label}>摄像头画面</div>
         <video ref={videoRef} muted playsInline style={S.video} aria-label="Cimbar 摄像头预览" />
         <canvas ref={canvasRef} hidden />
-        {progress.length > 0 && (
-          <div style={{ marginTop: 12 }} aria-label="Cimbar 接收进度">
-            {progress.map((value, index) => (
-              <div key={index} style={S.progressBar}>
-                <div style={S.progressFill(Math.max(0, Math.min(100, value * 100)))} />
-              </div>
-            ))}
-          </div>
-        )}
       </section>
 
       {result && (
@@ -273,6 +348,12 @@ export function CimbarReceivePage() {
       )}
     </div>
   );
+}
+
+function formatDuration(seconds: number): string {
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  return minutes > 0 ? `${minutes}m${String(rest).padStart(2, '0')}s` : `${rest}s`;
 }
 
 function formatBytes(bytes: number): string {
