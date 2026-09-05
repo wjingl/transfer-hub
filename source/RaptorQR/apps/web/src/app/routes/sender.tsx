@@ -100,7 +100,7 @@ type CSSProps = Record<string, string | number>;
 
 const MIN_FRAME_RATE_FPS = 2;
 const MAX_FRAME_RATE_FPS = 60;
-const DEFAULT_FRAME_RATE_FPS = 30;
+const DEFAULT_FRAME_RATE_FPS = 5;
 const DEFAULT_PARALLEL_QR_COUNT: ParallelQRCount = 4;
 const PARALLEL_QR_COUNTS: ParallelQRCount[] = [1, 2, 4, 6, 8];
 const FEC_CODEC_OPTIONS: FecCodec[] = FEC_CODECS.map((codec) => codec.id);
