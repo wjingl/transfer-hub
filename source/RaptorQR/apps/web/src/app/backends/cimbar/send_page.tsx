@@ -28,7 +28,7 @@ export function CimbarSendPage() {
   const senderRef = useRef<CimbarSender | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [mode, setMode] = useState<CimbarMode>('B');
-  const [fps, setFps] = useState(15);
+  const [fps, setFps] = useState(5);
   const [running, setRunning] = useState(false);
   const [canvasKey, setCanvasKey] = useState(0);
   const [status, setStatus] = useState('选择文件后开始发送。');
