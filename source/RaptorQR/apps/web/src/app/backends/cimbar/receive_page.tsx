@@ -71,8 +71,9 @@ export function CimbarReceivePage() {
           if (c.video && typeof c.video === 'object') {
             const v = { ...(c.video as Record<string, unknown>) };
             delete v.aspectRatio;
-            v.width = { ideal: 1280 };
-            v.height = { ideal: 1280 };
+            // 正方形 ideal + 高分辨率：无 aspectRatio 裁切，实际命中与官方等效的 1920x1080 高档位
+            v.width = { ideal: 1920 };
+            v.height = { ideal: 1920 };
             const advanced = Array.isArray(v.advanced) ? [...(v.advanced as unknown[])] : [];
             if (v.focusMode) { advanced.push({ focusMode: v.focusMode }); delete v.focusMode; }
             if (v.exposureMode) { advanced.push({ exposureMode: v.exposureMode }); delete v.exposureMode; }
